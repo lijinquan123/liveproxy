@@ -140,17 +140,17 @@ class HTTPRequest(BaseHTTPRequestHandler):
                     log.error(f'E1: {e!r}')
             else:
                 log.error(f'E2: {e!r}')
-
-        #log.info(f'Stream ended {random_id},{arglist}')
-        process.terminate()
-        process.wait()
-        process.kill()
         try:
             log.info(f'Stream ended force kill {random_id},pid {pid}')
             a = os.kill(pid, signal.SIGKILL)
             # a = os.kill(pid, signal.9) #　与上等效            
         except OSError, e:
             pass
+      
+        #log.info(f'Stream ended {random_id},{arglist}')
+        process.terminate()
+        process.wait()
+        process.kill()
 
 
 class Server(HTTPServer):
