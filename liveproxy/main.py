@@ -23,7 +23,7 @@ def main():
     logging.basicConfig(
         stream=sys.stdout,
         level=args.loglevel,
-        format='[%(name)s][%(levelname)s] %(message)s',
+        format='[%(asctime)s %(filename)s[%(lineno)d][%(name)s][%(levelname)s] %(message)s',
     )
 
     if hasattr(os, 'getuid'):
