@@ -7,6 +7,7 @@ import shlex
 import socket
 import subprocess
 import sys
+import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from select import select
 from shutil import which
@@ -61,7 +62,8 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
     def do_GET(self):
         '''Respond to a GET request.'''
-        random_id = hex(int(time()))[5:]
+        #random_id = hex(int(time()))[5:]
+        random_id = str(int(time()))
         log = logging.getLogger('{name}.{random_id}'.format(
             name=__name__.replace('liveproxy.', ''),
             random_id=random_id,
@@ -94,7 +96,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
         log.debug(f'Video-Software: {prog}')
         if _re_streamlink.search(prog):
-            arglist.extend(['--stdout', '--loglevel', 'none'])
+            arglist.extend(['--stdout', '--loglevel', 'none','-t',str(random_id)])
         elif _re_youtube_dl.search(prog):
             arglist.extend(['--o', '-', '--quiet', '--no-playlist', '--no-warnings', '--no-progress'])
         else:
@@ -109,8 +111,8 @@ class HTTPRequest(BaseHTTPRequestHandler):
                                    stdout=subprocess.PIPE,
                                    shell=False,
                                    )
-
-        log.info(f'Stream started {random_id}')
+        pid=process.pid
+        log.info(f'Stream started {random_id},{pid},{arglist}')
         try:
             while True:
                 reads, _, _ = select([process.stdout.fileno(), process.stderr.fileno()], [], [])
@@ -139,10 +141,16 @@ class HTTPRequest(BaseHTTPRequestHandler):
             else:
                 log.error(f'E2: {e!r}')
 
-        log.info(f'Stream ended {random_id}')
+        #log.info(f'Stream ended {random_id},{arglist}')
         process.terminate()
         process.wait()
         process.kill()
+        try:
+            log.info(f'Stream ended force kill {random_id},pid {pid}')
+            a = os.kill(pid, signal.SIGKILL)
+            # a = os.kill(pid, signal.9) #　与上等效            
+        except OSError, e:
+            pass
 
 
 class Server(HTTPServer):
