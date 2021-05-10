@@ -144,7 +144,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
             log.info(f'Stream ended force kill {random_id},pid {pid}')
             a = os.kill(pid, signal.SIGKILL)
             # a = os.kill(pid, signal.9) #　与上等效            
-        except OSError, e:
+        except OSError as e:
             pass
       
         #log.info(f'Stream ended {random_id},{arglist}')
