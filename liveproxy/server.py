@@ -1,19 +1,21 @@
 import base64
 import errno
+import hashlib
 import logging
 import os
 import re
 import shlex
+import signal
 import socket
 import subprocess
 import sys
-import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from select import select
 from shutil import which
 from socketserver import ThreadingMixIn
 from time import time
 from urllib.parse import parse_qsl, unquote, urlparse
+
+from select import select
 
 ACCEPTABLE_ERRNO = (
     errno.ECONNABORTED,
@@ -30,6 +32,11 @@ _re_streamlink = re.compile(r'streamlink(?:\.exe)?$')
 _re_youtube_dl = re.compile(r'youtube[_-]dl(?:\.exe)?$')
 
 log = logging.getLogger(__name__.replace('liveproxy.', ''))
+
+
+def calculate_sign(path: str):
+    salt = '9AE77E63242405B09358232023103420'
+    return hashlib.md5((path + salt).encode('utf-8')).hexdigest()
 
 
 def arglist_from_query(path, prog='streamlink'):
@@ -62,7 +69,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
     def do_GET(self):
         '''Respond to a GET request.'''
-        #random_id = hex(int(time()))[5:]
+        # random_id = hex(int(time()))[5:]
         random_id = str(int(time()))
         log = logging.getLogger('{name}.{random_id}'.format(
             name=__name__.replace('liveproxy.', ''),
@@ -72,15 +79,20 @@ class HTTPRequest(BaseHTTPRequestHandler):
         log.info(f'User-Agent: {self.headers.get("User-Agent", "???")}')
         log.info(f'Client: {self.client_address}')
         log.info(f'Address: {self.address_string()}')
-
-        if self.path.startswith(('/play/', '/streamlink/', '/301/', '/streamlink_301/')):
+        sign = self.path[1:].split('/')[0] or ''
+        path = self.path[33:]
+        if len(sign) != 32 or sign != calculate_sign(path):
+            log.warning(f'异常请求, Address: {self.address_string()}, path: {self.path}')
+            self._headers(403, 'text/html', connection='close')
+            return
+        if path.startswith(('/play/', '/streamlink/', '/301/', '/streamlink_301/')):
             # http://127.0.0.1:53422/play/?url=https://foo.bar&q=worst
-            arglist = arglist_from_query(self.path)
-        elif self.path.startswith(('/base64/')):
+            arglist = arglist_from_query(path)
+        elif path.startswith(('/base64/')):
             # http://127.0.0.1:53422/base64/STREAMLINK-COMMANDS/
             # http://127.0.0.1:53422/base64/YOUTUBE-DL-COMMANDS/
             try:
-                arglist = shlex.split(base64.urlsafe_b64decode(self.path.split('/')[2]).decode('UTF-8'))
+                arglist = shlex.split(base64.urlsafe_b64decode(path.split('/')[2]).decode('UTF-8'))
             except base64.binascii.Error as err:
                 log.error(f'invalid base64 URL: {err}')
                 self._headers(404, 'text/html', connection='close')
@@ -96,7 +108,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
         log.debug(f'Video-Software: {prog}')
         if _re_streamlink.search(prog):
-            arglist.extend(['--stdout', '--loglevel', 'none','-t',str(random_id)])
+            arglist.extend(['--stdout', '--loglevel', 'none', '-t', str(random_id)])
         elif _re_youtube_dl.search(prog):
             arglist.extend(['--o', '-', '--quiet', '--no-playlist', '--no-warnings', '--no-progress'])
         else:
@@ -111,7 +123,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
                                    stdout=subprocess.PIPE,
                                    shell=False,
                                    )
-        pid=process.pid
+        pid = process.pid
         log.info(f'Stream started {random_id},{pid},{arglist}')
         try:
             while True:
@@ -143,11 +155,11 @@ class HTTPRequest(BaseHTTPRequestHandler):
         try:
             log.info(f'Stream ended force kill {random_id},pid {pid}')
             a = os.kill(pid, signal.SIGKILL)
-            # a = os.kill(pid, signal.9) #　与上等效            
+            # a = os.kill(pid, signal.9) #　与上等效
         except OSError as e:
             pass
-      
-        #log.info(f'Stream ended {random_id},{arglist}')
+
+        # log.info(f'Stream ended {random_id},{arglist}')
         process.terminate()
         process.wait()
         process.kill()
